@@ -11,14 +11,32 @@ function storedConfig(record) {
   return normalizeCalculatorConfig(record.config);
 }
 
-function isMissingMetaobjectDefinitionError(payload, result) {
-  const userErrors = payload?.userErrors ?? result?.errors ?? [];
+function extractMetaobjectErrorMessages(payload, result) {
+  const sources = [
+    ...(payload?.userErrors ?? []),
+    ...(result?.errors ?? []),
+  ];
 
-  return userErrors.some((error) => {
-    const message = error?.message ?? "";
+  const messages = sources
+    .map((error) => error?.message)
+    .filter((message) => typeof message === "string" && message.length > 0);
+
+  if (!messages.length && typeof result?.message === "string") {
+    messages.push(result.message);
+  }
+
+  return messages;
+}
+
+function isMissingMetaobjectDefinitionError(payload, result) {
+  const messages = extractMetaobjectErrorMessages(payload, result);
+
+  return messages.some((message) => {
+    const normalized = message.toLowerCase();
     return (
-      message.includes("No metaobject definition exists") ||
-      message.includes("does not exist") && message.includes("metaobject")
+      normalized.includes("no metaobject definition exists") ||
+      (normalized.includes("does not exist") &&
+        normalized.includes("metaobject"))
     );
   });
 }
@@ -63,6 +81,8 @@ async function syncMetaobject(admin, calculator) {
     payload?.userErrors?.length ||
     !metaobjectId
   ) {
+    const errorMessages = extractMetaobjectErrorMessages(payload, result);
+
     if (isMissingMetaobjectDefinitionError(payload, result)) {
       console.warn(
         "Metaobject definition is not available yet for this shop; skipping sync until it is provisioned.",
@@ -76,7 +96,7 @@ async function syncMetaobject(admin, calculator) {
       result.errors ?? payload?.userErrors,
     );
     throw new Error(
-      payload?.userErrors?.[0]?.message ??
+      errorMessages[0] ??
         "Could not publish the calculator to the theme editor. Please try again.",
     );
   }
