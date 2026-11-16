@@ -8,6 +8,7 @@ const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
 const MAX_UPLOAD_REQUEST_SIZE = MAX_UPLOAD_SIZE + 256 * 1024;
 const MAX_ITEMS = 50;
 const MAX_TOTAL_MEASURE = 1_000_000_000_000;
+const MAX_FALLBACK_LINE_ITEM_QUANTITY = 9999;
 
 function jsonResponse(data, status = 200) {
   return Response.json(data, {
@@ -34,6 +35,56 @@ function extractGraphqlErrorMessages(error) {
   }
 
   return messages;
+}
+
+function buildFallbackCartCheckoutUrl({
+  shop,
+  calculator,
+  validated,
+  currencyCode,
+}) {
+  const variantId = (process.env.SERVICECALC_FALLBACK_VARIANT_ID ?? "").trim();
+  if (!/^\d+$/.test(variantId)) {
+    return null;
+  }
+
+  const configuredUnitCents = Number.parseInt(
+    process.env.SERVICECALC_FALLBACK_UNIT_CENTS ?? "1",
+    10,
+  );
+  const unitCents =
+    Number.isSafeInteger(configuredUnitCents) && configuredUnitCents > 0
+      ? configuredUnitCents
+      : 1;
+
+  if (validated.totalPriceCents % unitCents !== 0) {
+    return null;
+  }
+
+  const quantity = validated.totalPriceCents / unitCents;
+  if (
+    !Number.isSafeInteger(quantity) ||
+    quantity <= 0 ||
+    quantity > MAX_FALLBACK_LINE_ITEM_QUANTITY
+  ) {
+    return null;
+  }
+
+  const checkoutUrl = new URL(`https://${shop}/cart/${variantId}:${quantity}`);
+  checkoutUrl.searchParams.set(
+    "attributes[ServiceCalc Calculator]",
+    calculator.name,
+  );
+  checkoutUrl.searchParams.set(
+    "attributes[ServiceCalc Total]",
+    `${(validated.totalPriceCents / 100).toFixed(2)} ${currencyCode}`,
+  );
+  checkoutUrl.searchParams.set(
+    "attributes[ServiceCalc Measurement]",
+    `${validated.totalMeasure.toFixed(validated.config.totalMeasureDecimalPlaces ?? 3)} ${validated.inputUnit.shortLabel}`,
+  );
+
+  return checkoutUrl.toString();
 }
 
 function validateFieldValue(field, rawValue, context) {
@@ -477,10 +528,21 @@ export async function action({ request }) {
       );
 
       if (hasScopeError) {
+        const fallbackCheckoutUrl = buildFallbackCartCheckoutUrl({
+          shop,
+          calculator,
+          validated,
+          currencyCode,
+        });
+
+        if (fallbackCheckoutUrl) {
+          return jsonResponse({ checkoutUrl: fallbackCheckoutUrl });
+        }
+
         return jsonResponse(
           {
             error:
-              "Checkout is not available yet because app permissions are out of date. Reinstall the app and approve updated scopes, then try again.",
+              "Checkout is not available yet because this app is not approved for DraftOrder access, and no cart fallback is configured.",
           },
           403,
         );
