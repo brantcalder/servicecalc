@@ -1,0 +1,87 @@
+<div
+  class="kiln-calculator"
+  data-width="{{ block.settings.width | default: 'wide' | escape }}"
+  data-corner-style="{{ block.settings.corner_style | default: 'subtle' | escape }}"
+  data-control-size="{{ block.settings.control_size | default: 'medium' | escape }}"
+  data-kiln-calculator="{{ block.id }}"
+  data-calculator-id="{% if block.settings.calculator != blank %}gid://shopify/Metaobject/{{ block.settings.calculator.system.id }}{% endif %}"
+  data-currency="{{ shop.currency | escape }}"
+  {{ block.shopify_attributes }}
+>
+  <h2 class="kiln-calculator__title" data-kiln-title></h2>
+  <p class="kiln-calculator__status" data-kiln-load-status role="status" hidden></p>
+
+  <form data-kiln-form hidden>
+    <h3 data-kiln-items-heading></h3>
+    <div class="kiln-calculator__items" data-kiln-items></div>
+    <button
+      class="kiln-calculator__button kiln-calculator__button--secondary"
+      type="button"
+      data-kiln-add-item
+      disabled
+    ></button>
+
+    <div class="kiln-calculator__order-fields" data-kiln-order-fields></div>
+
+    <div class="kiln-calculator__total" aria-live="polite">
+      <span data-kiln-total-measure-label></span>
+      <strong data-kiln-measure></strong>
+      <span data-kiln-total-charge-label></span>
+      <strong data-kiln-price></strong>
+    </div>
+
+    <p class="kiln-calculator__status" data-kiln-status role="status"></p>
+    <button class="kiln-calculator__button" type="submit" data-kiln-submit disabled></button>
+  </form>
+</div>
+
+{% schema %}
+{
+  "name": "t:name",
+  "target": "section",
+  "javascript": "servicecalc.js",
+  "stylesheet": "servicecalc.css",
+  "settings": [
+    {
+      "type": "metaobject",
+      "id": "calculator",
+      "label": "Calculator",
+      "metaobject_type": "app--446465245185--servicecalc"
+    },
+    {
+      "type": "select",
+      "id": "width",
+      "label": "Calculator width",
+      "options": [
+        { "value": "compact", "label": "Compact" },
+        { "value": "standard", "label": "Standard" },
+        { "value": "wide", "label": "Wide" },
+        { "value": "full", "label": "Full width" }
+      ],
+      "default": "wide"
+    },
+    {
+      "type": "select",
+      "id": "corner_style",
+      "label": "Button and field corners",
+      "options": [
+        { "value": "subtle", "label": "Subtle" },
+        { "value": "rounded", "label": "Rounded" },
+        { "value": "square", "label": "Square" }
+      ],
+      "default": "subtle"
+    },
+    {
+      "type": "select",
+      "id": "control_size",
+      "label": "Field and button size",
+      "options": [
+        { "value": "small", "label": "Small" },
+        { "value": "medium", "label": "Medium" },
+        { "value": "large", "label": "Large" }
+      ],
+      "default": "medium"
+    }
+  ]
+}
+{% endschema %}
