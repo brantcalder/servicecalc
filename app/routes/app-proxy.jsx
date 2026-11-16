@@ -16,6 +16,26 @@ function jsonResponse(data, status = 200) {
   });
 }
 
+function extractGraphqlErrorMessages(error) {
+  const messages = [];
+  const candidates = [
+    ...(error?.graphQLErrors ?? []),
+    ...(error?.errors?.graphQLErrors ?? []),
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate?.message === "string" && candidate.message.trim()) {
+      messages.push(candidate.message.trim());
+    }
+  }
+
+  if (!messages.length && typeof error?.message === "string") {
+    messages.push(error.message);
+  }
+
+  return messages;
+}
+
 function validateFieldValue(field, rawValue, context) {
   if (field.type === "checkbox") {
     if (typeof rawValue !== "boolean") {
@@ -343,14 +363,26 @@ export async function action({ request }) {
     }
 
     const { admin } = await unauthenticated.admin(shop);
-    const shopResponse = await admin.graphql(
+    let shopResponse;
+    try {
+      shopResponse = await admin.graphql(
     `#graphql
       query ShopCurrency {
         shop {
           currencyCode
         }
       }`,
-  );
+      );
+    } catch (error) {
+      console.error(
+        "Could not query shop currency for a ServiceCalc checkout.",
+        extractGraphqlErrorMessages(error),
+      );
+      return jsonResponse(
+        { error: "Could not prepare checkout. Please try again." },
+        502,
+      );
+    }
     const shopData = await shopResponse.json();
     const currencyCode = shopData.data?.shop?.currencyCode;
 
@@ -406,7 +438,9 @@ export async function action({ request }) {
       })),
   ];
 
-    const orderResponse = await admin.graphql(
+    let orderResponse;
+    try {
+      orderResponse = await admin.graphql(
     `#graphql
       mutation CreateKilnFiringDraftOrder($input: DraftOrderInput!) {
         draftOrderCreate(input: $input) {
@@ -429,8 +463,34 @@ export async function action({ request }) {
           presentmentCurrencyCode: currencyCode,
         },
       },
-    },
-  );
+      },
+      );
+    } catch (error) {
+      const messages = extractGraphqlErrorMessages(error);
+      const hasScopeError = messages.some((message) =>
+        /access denied|scope|permission/i.test(message),
+      );
+
+      console.error(
+        "Could not create a ServiceCalc draft order.",
+        messages,
+      );
+
+      if (hasScopeError) {
+        return jsonResponse(
+          {
+            error:
+              "Checkout is not available yet because app permissions are out of date. Reinstall the app and approve updated scopes, then try again.",
+          },
+          403,
+        );
+      }
+
+      return jsonResponse(
+        { error: "Could not create checkout. Please try again." },
+        502,
+      );
+    }
 
     const orderData = await orderResponse.json();
     const draftOrder = orderData.data?.draftOrderCreate?.draftOrder;
