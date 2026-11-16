@@ -248,93 +248,102 @@ function fieldDisplayValue(field, value, config, itemField = false) {
 }
 
 export async function loader({ request }) {
-  await authenticate.public.appProxy(request);
-  const url = new URL(request.url);
-  const shop = url.searchParams.get("shop");
+  try {
+    await authenticate.public.appProxy(request);
+    const url = new URL(request.url);
+    const shop = url.searchParams.get("shop");
 
-  if (!shop || !/^[a-zA-Z0-9][a-zA-Z0-9-]*\.myshopify\.com$/.test(shop)) {
+    if (!shop || !/^[a-zA-Z0-9][a-zA-Z0-9-]*\.myshopify\.com$/.test(shop)) {
+      return jsonResponse(
+        { error: "Could not identify the Shopify store." },
+        400,
+      );
+    }
+
+    const calculatorId = url.searchParams.get("calculatorId");
+    const calculator = await getCalculatorByMetaobjectId(shop, calculatorId);
+    if (!calculator) {
+      return jsonResponse(
+        { error: "This calculator is no longer available." },
+        404,
+      );
+    }
+
+    return jsonResponse({
+      calculator: {
+        id: calculator.id,
+        name: calculator.name,
+        config: calculator.config,
+      },
+    });
+  } catch (error) {
+    console.error("ServiceCalc app proxy settings request failed.", error);
     return jsonResponse(
-      { error: "Could not identify the Shopify store." },
-      400,
+      { error: "Could not load calculator settings. Please refresh and try again." },
+      500,
     );
   }
-
-  const calculatorId = url.searchParams.get("calculatorId");
-  const calculator = await getCalculatorByMetaobjectId(shop, calculatorId);
-  if (!calculator) {
-    return jsonResponse(
-      { error: "This calculator is no longer available." },
-      404,
-    );
-  }
-
-  return jsonResponse({
-    calculator: {
-      id: calculator.id,
-      name: calculator.name,
-      config: calculator.config,
-    },
-  });
 }
 
 export async function action({ request }) {
-  await authenticate.public.appProxy(request);
-
-  if (request.method !== "POST") {
-    return jsonResponse(
-      { error: "Use POST to submit a kiln firing order." },
-      405,
-    );
-  }
-
-  const url = new URL(request.url);
-  if (url.searchParams.get("resource") === "upload") {
-    return uploadFieldFile(request, url);
-  }
-
-  const contentLength = Number(request.headers.get("Content-Length"));
-  if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_SIZE) {
-    return jsonResponse({ error: "The submission is too large." }, 413);
-  }
-
-  if (!request.headers.get("Content-Type")?.includes("application/json")) {
-    return jsonResponse({ error: "Submit the calculator form as JSON." }, 415);
-  }
-
-  const requestBody = await request.text();
-  if (new TextEncoder().encode(requestBody).byteLength > MAX_REQUEST_SIZE) {
-    return jsonResponse({ error: "The submission is too large." }, 413);
-  }
-
-  let submission;
   try {
-    submission = JSON.parse(requestBody);
-  } catch {
-    return jsonResponse({ error: "The submission is not valid JSON." }, 400);
-  }
+    await authenticate.public.appProxy(request);
 
-  const shop = url.searchParams.get("shop");
-  if (!shop || !/^[a-zA-Z0-9][a-zA-Z0-9-]*\.myshopify\.com$/.test(shop)) {
-    return jsonResponse(
-      { error: "Could not identify the Shopify store." },
-      400,
-    );
-  }
-  const calculatorId = url.searchParams.get("calculatorId");
-  const calculator = await getCalculatorByMetaobjectId(shop, calculatorId);
-  if (!calculator) {
-    return jsonResponse(
-      { error: "This calculator is no longer available." },
-      404,
-    );
-  }
-  const validated = validateSubmission(submission, calculator);
-  if (validated.error) {
-    return jsonResponse({ error: validated.error }, 400);
-  }
+    if (request.method !== "POST") {
+      return jsonResponse(
+        { error: "Use POST to submit a kiln firing order." },
+        405,
+      );
+    }
 
-  const { admin } = await unauthenticated.admin(shop);
-  const shopResponse = await admin.graphql(
+    const url = new URL(request.url);
+    if (url.searchParams.get("resource") === "upload") {
+      return uploadFieldFile(request, url);
+    }
+
+    const contentLength = Number(request.headers.get("Content-Length"));
+    if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_SIZE) {
+      return jsonResponse({ error: "The submission is too large." }, 413);
+    }
+
+    if (!request.headers.get("Content-Type")?.includes("application/json")) {
+      return jsonResponse({ error: "Submit the calculator form as JSON." }, 415);
+    }
+
+    const requestBody = await request.text();
+    if (new TextEncoder().encode(requestBody).byteLength > MAX_REQUEST_SIZE) {
+      return jsonResponse({ error: "The submission is too large." }, 413);
+    }
+
+    let submission;
+    try {
+      submission = JSON.parse(requestBody);
+    } catch {
+      return jsonResponse({ error: "The submission is not valid JSON." }, 400);
+    }
+
+    const shop = url.searchParams.get("shop");
+    if (!shop || !/^[a-zA-Z0-9][a-zA-Z0-9-]*\.myshopify\.com$/.test(shop)) {
+      return jsonResponse(
+        { error: "Could not identify the Shopify store." },
+        400,
+      );
+    }
+    const calculatorId = url.searchParams.get("calculatorId");
+    const calculator = await getCalculatorByMetaobjectId(shop, calculatorId);
+    if (!calculator) {
+      return jsonResponse(
+        { error: "This calculator is no longer available." },
+        404,
+      );
+    }
+    const validated = validateSubmission(submission, calculator);
+    if (validated.error) {
+      return jsonResponse({ error: validated.error }, 400);
+    }
+
+    const { admin } = await unauthenticated.admin(shop);
+    const shopResponse = await admin.graphql(
     `#graphql
       query ShopCurrency {
         shop {
@@ -342,18 +351,18 @@ export async function action({ request }) {
         }
       }`,
   );
-  const shopData = await shopResponse.json();
-  const currencyCode = shopData.data?.shop?.currencyCode;
+    const shopData = await shopResponse.json();
+    const currencyCode = shopData.data?.shop?.currencyCode;
 
-  if (!shopResponse.ok || shopData.errors || !currencyCode) {
-    console.error("Could not retrieve the shop currency for a kiln order.");
-    return jsonResponse(
-      { error: "Could not prepare checkout. Please try again." },
-      502,
-    );
-  }
+    if (!shopResponse.ok || shopData.errors || !currencyCode) {
+      console.error("Could not retrieve the shop currency for a kiln order.");
+      return jsonResponse(
+        { error: "Could not prepare checkout. Please try again." },
+        502,
+      );
+    }
 
-  const lineItems = validated.items.map((item, index) => ({
+    const lineItems = validated.items.map((item, index) => ({
     title: `${calculator.name} — ${validated.config.labels.itemPrefix} ${index + 1}`,
     quantity: 1,
     originalUnitPriceWithCurrency: {
@@ -377,7 +386,7 @@ export async function action({ request }) {
         ),
       })),
   }));
-  const customAttributes = [
+    const customAttributes = [
     {
       key: "Kiln firing rate",
       value: `${validated.config.ratePerUnit} ${currencyCode} per ${validated.rateUnit.label}`,
@@ -397,7 +406,7 @@ export async function action({ request }) {
       })),
   ];
 
-  const orderResponse = await admin.graphql(
+    const orderResponse = await admin.graphql(
     `#graphql
       mutation CreateKilnFiringDraftOrder($input: DraftOrderInput!) {
         draftOrderCreate(input: $input) {
@@ -423,27 +432,34 @@ export async function action({ request }) {
     },
   );
 
-  const orderData = await orderResponse.json();
-  const draftOrder = orderData.data?.draftOrderCreate?.draftOrder;
-  const userErrors = orderData.data?.draftOrderCreate?.userErrors;
+    const orderData = await orderResponse.json();
+    const draftOrder = orderData.data?.draftOrderCreate?.draftOrder;
+    const userErrors = orderData.data?.draftOrderCreate?.userErrors;
 
-  if (
-    !orderResponse.ok ||
-    orderData.errors ||
-    userErrors?.length ||
-    !draftOrder?.invoiceUrl
-  ) {
-    console.error(
-      "Could not create a ServiceCalc draft order.",
-      orderData.errors ?? userErrors,
-    );
+    if (
+      !orderResponse.ok ||
+      orderData.errors ||
+      userErrors?.length ||
+      !draftOrder?.invoiceUrl
+    ) {
+      console.error(
+        "Could not create a ServiceCalc draft order.",
+        orderData.errors ?? userErrors,
+      );
+      return jsonResponse(
+        { error: "Could not create checkout. Please try again." },
+        502,
+      );
+    }
+
+    return jsonResponse({ checkoutUrl: draftOrder.invoiceUrl });
+  } catch (error) {
+    console.error("ServiceCalc app proxy checkout request failed.", error);
     return jsonResponse(
-      { error: "Could not create checkout. Please try again." },
-      502,
+      { error: "Could not prepare checkout. Please try again." },
+      500,
     );
   }
-
-  return jsonResponse({ checkoutUrl: draftOrder.invoiceUrl });
 }
 
 async function uploadFieldFile(request, url) {
