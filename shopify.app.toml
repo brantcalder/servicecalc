@@ -2,7 +2,7 @@
 
 client_id = "ffbff99b74909dd8a86640541f05e501"
 name = "ServiceCalc"
-application_url = "https://random-name.trycloudflare.com"
+application_url = "https://servicecalc-production.up.railway.app"
 embedded = true
 
 [build]
@@ -44,7 +44,7 @@ prefix = "apps"
 subpath = "servicecalc"
 
 [auth]
-redirect_urls = [ ]
+redirect_urls = [ "https://servicecalc-production.up.railway.app/auth/callback" ]
 
 [product.metafields.app.demo_info]
 type = "single_line_text_field"

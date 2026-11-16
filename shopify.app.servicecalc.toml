@@ -2,7 +2,7 @@
 
 client_id = "60393194fc7037cfc36da2de517428fc"
 name = "ServiceCalc"
-application_url = "https://example.com"
+application_url = "https://servicecalc-production.up.railway.app"
 embedded = true
 
 [webhooks]
@@ -32,7 +32,7 @@ prefix = "apps"
 subpath = "servicecalc"
 
 [auth]
-redirect_urls = [ ]
+redirect_urls = [ "https://servicecalc-production.up.railway.app/auth/callback" ]
 
 [product.metafields.app.demo_info]
 type = "single_line_text_field"

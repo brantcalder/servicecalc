@@ -11,6 +11,18 @@ function storedConfig(record) {
   return normalizeCalculatorConfig(record.config);
 }
 
+function isMissingMetaobjectDefinitionError(payload, result) {
+  const userErrors = payload?.userErrors ?? result?.errors ?? [];
+
+  return userErrors.some((error) => {
+    const message = error?.message ?? "";
+    return (
+      message.includes("No metaobject definition exists") ||
+      message.includes("does not exist") && message.includes("metaobject")
+    );
+  });
+}
+
 async function syncMetaobject(admin, calculator) {
   const displayName = calculator.isArchived
     ? `Archived — ${calculator.name}`
@@ -51,6 +63,14 @@ async function syncMetaobject(admin, calculator) {
     payload?.userErrors?.length ||
     !metaobjectId
   ) {
+    if (isMissingMetaobjectDefinitionError(payload, result)) {
+      console.warn(
+        "Metaobject definition is not available yet for this shop; skipping sync until it is provisioned.",
+        payload?.userErrors ?? result?.errors,
+      );
+      return calculator.metaobjectId ?? null;
+    }
+
     console.error(
       "Could not synchronize a ServiceCalc theme-picker entry.",
       result.errors ?? payload?.userErrors,
